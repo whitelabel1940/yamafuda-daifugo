@@ -250,7 +250,7 @@ const TAG={4:'返',5:'切',6:'飛',8:'逆'};
 const NAMES=['ミナト','サクラ','ケンジ','アオイ'];
 const $=s=>document.querySelector(s);
 
-const DEFAULTS={players:4,hand:8,jokers:2,seq:true,recycle:true,speed:800,seqCmp:'low',seqRev:true,lockColor:true,lockSuit:true,lockNum:true};
+const DEFAULTS={players:4,hand:8,jokers:2,seq:true,recycle:true,speed:800,seqCmp:'low',seqRev:true,lockColor:true,lockSuit:true,lockNum:true,forbidFinish:true};
 let CFG=loadCfg();
 let S=null, sel=new Set(), timer=null, shownBanner=0, sheet=null, hintMsg='', onboarding=false;
 function introSeen(){try{return localStorage.getItem('yamafuda-intro')==='1';}catch(e){return false;}}
@@ -400,6 +400,8 @@ function describe(p){
 function whyNot(cards){
   const ints=interpretations(cards);
   if(!ints.length) return S.cfg.seq?'同じ数字どうしか、同じスートで3枚以上の連番にしてください':'同じ数字の札だけを組み合わせてください';
+  const okPlay=resolveAny(cards,S.field);
+  if(okPlay&&forbiddenFinish(S.players[0].hand,cards,okPlay)) return `禁止上がり：${forbidReason(cards,okPlay)}では上がれません`;
   const f=S.field; if(!f) return '';
   if(!ints.some(p=>p.type===f.type&&p.count===f.count))
     return f.type==='seq'?`場は${f.count}枚の階段です。同じ枚数の階段で出してください`:`場と同じ${f.count}枚で出してください`;
@@ -432,11 +434,29 @@ function candidates(hand){
   }
   return out;
 }
+/* ---------- 禁止上がり ---------- */
+function topRank(){return S.rev?R3:12;}
+function forbiddenCard(c){return c.r===JOKER||c.r===topRank()||c.r===R8||c.r===RJ;}
+function forbiddenFinish(hand,cards,play){
+  if(!S.cfg.forbidFinish||cards.length!==hand.length) return false;
+  if(play.spade3||cards.some(c=>c.r===JOKER)) return true;
+  const top=topRank();
+  return ranksOf(play).some(r=>r===top||r===R8||r===RJ);
+}
+function forbidReason(cards,play){
+  if(play.spade3) return 'ジョーカーを切る♠3';
+  if(cards.some(c=>c.r===JOKER)) return 'ジョーカー';
+  const top=topRank(),names=[];
+  for(const r of [top,R8,RJ]) if(ranksOf(play).includes(r)) names.push(RANKS[r]);
+  return names.join('・')+(play.type==='seq'?'を含む階段':'');
+}
+function playFor(hand,cards){const p=resolveAny(cards,S.field); return p&&!forbiddenFinish(hand,cards,p)?p:null;}
 function legalMoves(hand){
   const res=[];
-  for(const cards of candidates(hand)){const play=resolveAny(cards,S.field); if(play) res.push({cards,play});}
+  for(const cards of candidates(hand)){const play=resolveAny(cards,S.field); if(play&&!forbiddenFinish(hand,cards,play)) res.push({cards,play});}
   return res;
 }
+function leaderStuck(seat){return !S.field&&!legalMoves(S.players[seat].hand).length;}
 function longVal(r){
   if(r===JOKER) return 15;
   let v=S.rev?12-r:r;
@@ -456,10 +476,9 @@ function chooseMove(seat,hint){
       const nat=m.cards.filter(c=>c.r!==JOKER).length;
       if(nat<counts[m.play.rank]) sc-=3;
     }
-    if(isRevolution(m.play)){
-      const rest=hand.filter(c=>!m.cards.includes(c));
-      sc+=mean(rest.map(c=>longVal(c.r)))<6?6:-6;
-    }
+    const rest=hand.filter(c=>!m.cards.includes(c));
+    if(isRevolution(m.play)) sc+=mean(rest.map(c=>longVal(c.r)))<6?6:-6;
+    if(S.cfg.forbidFinish&&rest.length&&rest.every(forbiddenCard)) sc-=15;
     if(m.play.type==='seq') sc+=1;
     if(m.cards.length>1&&m.cards.some(c=>c.r===JOKER)) sc-=4;
     const rk=ranksOf(m.play);
@@ -468,7 +487,8 @@ function chooseMove(seat,hint){
     if(!hint) sc+=Math.random()*1.2;
     if(sc>bs){bs=sc;best=m;}
   }
-  if(S.field&&!hint){
+  const risky=S.cfg.forbidFinish&&hand.filter(forbiddenCard).length>=hand.length-1;
+  if(S.field&&!hint&&!risky){
     const avg=mean(best.cards.map(c=>longVal(c.r)));
     const hs=hand.length;
     if(!ranksOf(best.play).includes(R8)){
@@ -484,7 +504,9 @@ function isRevolution(p){
 function canDraw(){return S.deck.length>0||(S.cfg.recycle&&S.discard.length>0);}
 function cpuWantsDraw(seat){
   const P=S.players[seat];
-  if(!canDraw()||P.hand.length<=2) return false;
+  if(!canDraw()) return false;
+  if(S.cfg.forbidFinish&&(P.hand.every(forbiddenCard)||leaderStuck(seat))) return true;
+  if(P.hand.length<=2) return false;
   let p=P.drawTend;
   if(mean(P.hand.map(c=>longVal(c.r)))<5) p+=0.3;
   if(P.hand.length>=9) p-=0.3;
@@ -512,7 +534,7 @@ function newGame(){
 function startRound(){
   clearTimeout(timer); sel.clear(); hintMsg='';
   S.round++;
-  Object.assign(S,{discard:[],field:null,lastPlayer:null,dir:1,rev:false,eb:false,skip:0,lock:{color:null,suit:null,num:false},finishOrder:[],marks:{},fresh:[],ex:null,phase:'play',turn:0,result:null});
+  Object.assign(S,{discard:[],field:null,lastPlayer:null,dir:1,rev:false,eb:false,skip:0,lock:{color:null,suit:null,num:false},stuck:0,finishOrder:[],marks:{},fresh:[],ex:null,phase:'play',turn:0,result:null});
   const deck=buildDeck();
   S.players.forEach(P=>{P.hand=sortHand(deck.splice(0,S.cfg.hand));P.finished=false;P.place=null;});
   S.deck=deck;
@@ -609,8 +631,9 @@ function fieldOrder(cards,play){
 }
 function doPlay(seat,cards){
   const P=S.players[seat];
-  const play=resolveAny(cards,S.field);
+  const play=playFor(P.hand,cards);
   if(!play) return false;
+  S.stuck=0;
   const ids=new Set(cards.map(c=>c.id));
   P.hand=P.hand.filter(c=>!ids.has(c.id));
   const old=S.field;
@@ -654,16 +677,25 @@ function doPlay(seat,cards){
   S.lastPlayer=seat; S.skip=skip; advance(seat); schedule(); return true;
 }
 function doPass(seat,draw){
-  if(!S.field) return;
-  const P=S.players[seat]; let drew=null;
+  const P=S.players[seat],stuck=!S.field; let drew=null;
+  if(stuck&&!leaderStuck(seat)) return;
   if(draw){
     if(!S.deck.length&&S.cfg.recycle&&S.discard.length){S.deck=shuffle(S.discard); S.discard=[]; log('捨て札を切り直して山札にした','dim');}
     if(S.deck.length){drew=S.deck.pop(); P.hand.push(drew); sortHand(P.hand);}
   }
   if(seat===0){sel.clear(); hintMsg=''; S.fresh=drew?[drew.id]:[];}
   S.marks[seat]=drew?'draw':'pass';
-  log(`${P.name}：パス${drew?(seat===0?`（${cardText(drew)}を引いた）`:'（山札から1枚引いた）'):''}`,seat===0?'me':'dim');
-  advance(seat); schedule();
+  log(`${P.name}：パス${stuck?'（禁止上がりで出せる札がない）':''}${drew?(seat===0?`（${cardText(drew)}を引いた）`:'（山札から1枚引いた）'):''}`,seat===0?'me':'dim');
+  if(stuck) S.stuck=drew?0:(S.stuck||0)+1;
+  advance(seat);
+  if(stuck&&S.stuck>=activeSeats().length){forceEnd(); return;}
+  schedule();
+}
+function forceEnd(){
+  const rest=activeSeats().sort((a,b)=>S.players[a].hand.length-S.players[b].hand.length);
+  log('全員が禁止上がりで出せず山札も引けないため、手札の少ない順に順位を決めました','fx');
+  rest.forEach(i=>{const P=S.players[i]; P.finished=true; S.finishOrder.push(i); P.place=S.finishOrder.length;});
+  endRound();
 }
 function endRound(){
   clearTimeout(timer);
@@ -777,18 +809,20 @@ function renderMe(){
     }else if(!myTurn){
       msg=`${S.players[S.turn].name}の番です`;
     }else{
-      const play=selCards.length?resolveAny(selCards,S.field):null;
+      const play=selCards.length?playFor(me.hand,selCards):null;
+      const stuck=!S.field&&!moves.length;
       if(selCards.length){
         if(play){msg=`${describe(play)}を出せます`; cls='ok';}
         else{msg=whyNot(selCards); cls='warn';}
       }else if(hintMsg){msg=hintMsg;}
+      else if(stuck){msg='禁止上がり：残りの札では上がれません。1枚引いてパスするか、パスしてください'; cls='warn';}
       else if(!S.field){msg='あなたの番：場は空です。好きな札を出してください';}
       else if(!moves.length){msg=`出せる札がありません。パスするか、1枚引いてパス`; cls='warn';}
       else{const ls=lockSummary(); msg=`あなたの番：${describe(S.field)}より強い札を同じ枚数で出すか、パス${ls?`（縛り：${ls}）`:''}`;}
       const draw=canDraw();
       acts=`<button class="btn" data-act="hint" type="button">ヒント</button>
-        <button class="btn" data-act="pass" type="button" ${S.field?'':'disabled'}>パス</button>
-        <button class="btn" data-act="draw" type="button" ${S.field&&draw?'':'disabled'}>${draw?'1枚引いてパス':'山札なし'}</button>
+        <button class="btn" data-act="pass" type="button" ${S.field||stuck?'':'disabled'}>パス</button>
+        <button class="btn" data-act="draw" type="button" ${(S.field||stuck)&&draw?'':'disabled'}>${draw?'1枚引いてパス':'山札なし'}</button>
         <button class="btn primary" data-act="play" type="button" ${play?'':'disabled'}>出す</button>`;
     }
   }else if(S.phase==='roundEnd'){
@@ -840,6 +874,7 @@ function introHTML(){
       <li>7リバース・8切り・9スキップ・11バック（J）</li>
       <li>革命と階段革命、ジョーカーとスペ3返し</li>
       <li>色縛り・スート縛り・数字縛り（重なることもあります）</li>
+      <li>禁止上がり（2・8・J・ジョーカーなどでは上がれない）</li>
     </ul>
     <p class="note">もとはUNOのカードで遊んでいたハウスルールを、トランプで再現したものです。細かいルールは、遊びながら右上の「ルール」でいつでも確認できます。</p>
     <div class="row">${onboarding
@@ -887,6 +922,13 @@ function rulesHTML(){
       ${S.cfg.lockNum?`<li><b>数字縛り</b>：ちょうど1つ強い数字が2回続くと、以後も1つ強い数字しか出せない（3→4なら次は5、33→44なら55${S.cfg.seq?(S.cfg.seqCmp==='strict'?'、345→678なら次は9〜J':'、345→456なら567'):''}）。革命や11バック中は数字が1つ小さくなる方向です。</li>`:''}
       <li>1枚出し・ペア・階段のどれにも適用されます。ジョーカーを含む出し方では縛りは発生しませんが、縛り中はジョーカーを好きなマーク・数字として使えます。</li>
     </ul>`:''}
+    ${S.cfg.forbidFinish?`<h3>禁止上がり</h3>
+    <p>次の札を含む出し方では、最後の1手として上がれません（ペアや階段に含まれる場合も同じ）。</p>
+    <ul>
+      <li>${S.rev?'革命中なので<b>3</b>（ふだんは2）':'<b>2</b>（革命中は3）'}・<b>8</b>・<b>J</b>${S.cfg.jokers?'・<b>ジョーカー</b>・ジョーカーを切る<b>♠3</b>':''}</li>
+      <li>手札がこれらの札だけになると、場が空でも出せません。パスして、山札から1枚引いて抜け出しましょう。</li>
+      <li>全員が出せず山札も引けなくなったら、手札の少ない順に順位を決めます。</li>
+    </ul>`:''}
     <h3>局と身分</h3>
     <ul>
       <li>上がった順に ${titlesFor(S.n).join('・')}。得点は大富豪${S.n-1}点から1点ずつ下がります。</li>
@@ -912,6 +954,7 @@ function settingsHTML(setup){
       <label for="setLockColor">色縛り</label><select id="setLockColor">${opt('1',CFG.lockColor?'1':'0','あり')}${opt('0',CFG.lockColor?'1':'0','なし')}</select>
       <label for="setLockSuit">スート縛り</label><select id="setLockSuit">${opt('1',CFG.lockSuit?'1':'0','あり')}${opt('0',CFG.lockSuit?'1':'0','なし')}</select>
       <label for="setLockNum">数字縛り</label><select id="setLockNum">${opt('1',CFG.lockNum?'1':'0','あり')}${opt('0',CFG.lockNum?'1':'0','なし')}</select>
+      <label for="setForbid">禁止上がり</label><select id="setForbid">${opt('1',CFG.forbidFinish?'1':'0','あり（2・8・J・ジョーカー等で上がれない）')}${opt('0',CFG.forbidFinish?'1':'0','なし')}</select>
       <label for="setRecycle">山札切れ</label><select id="setRecycle">${opt('1',CFG.recycle?'1':'0','流れた札を切り直す')}${opt('0',CFG.recycle?'1':'0','それ以降は引けない')}</select>
     </div>
     <p class="note">7リバース・8切り・9スキップ・11バックと、パスのときに山札から引けるルールは常にありです。</p>
@@ -955,7 +998,7 @@ document.addEventListener('click',e=>{
     CFG={players:+$('#setPlayers').value,hand:+$('#setHand').value,jokers:+$('#setJokers').value,
       seq:$('#setSeq').value==='1',recycle:$('#setRecycle').value==='1',speed:+$('#setSpeed').value,
       seqCmp:$('#setSeqCmp').value,seqRev:$('#setSeqRev').value==='1',
-      lockColor:$('#setLockColor').value==='1',lockSuit:$('#setLockSuit').value==='1',lockNum:$('#setLockNum').value==='1'};
+      lockColor:$('#setLockColor').value==='1',lockSuit:$('#setLockSuit').value==='1',lockNum:$('#setLockNum').value==='1',forbidFinish:$('#setForbid').value==='1'};
     saveCfg(); sheet=null;
     if(onboarding){onboarding=false; markIntroSeen();}
     newGame();
