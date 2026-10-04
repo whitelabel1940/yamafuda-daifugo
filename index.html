@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="パスのときに山札から1枚引ける大貧民。7リバース・8切り・9スキップ・11バック・縛りあり。">
+<title>山札大貧民</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+[hidden]{display:none!important}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* Layout: one-screen card table. Opponents across the top in turn order, an oval felt with the field and the draw pile in the middle, your hand along the bottom, a running log on the right (below on phones). Single deliberate look: deep teal felt, lacquer-red card backs, gold for "your move". */
+:root{
+  --felt:#123543;
+  --felt-2:#1b4b5c;
+  --felt-3:#0c2731;
+  --line:rgba(226,240,238,.14);
+  --ink:#e9f1ee;
+  --muted:#9ab6b8;
+  --paper:#fbf7ee;
+  --card-ink:#1c2330;
+  --red:#c2303b;
+  --gold:#e8b14a;
+  --gold-ink:#2a1d05;
+  --lacquer:#7d2231;
+  --f-display:"Dela Gothic One","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+  --f-index:"Shippori Mincho B1","Yu Mincho","Hiragino Mincho ProN",serif;
+  --cw:58px; --ch:84px;
+  --fcw:64px; --fch:92px;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{
+  margin:0;background:var(--felt-3);color:var(--ink);font-family:var(--f-body);font-size:14px;
+  background-image:radial-gradient(ellipse 120% 80% at 50% 40%, var(--felt) 0%, var(--felt-3) 75%);
+}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+#app{
+  height:100%;max-width:1280px;margin:0 auto;padding-inline:16px;padding-block:10px 12px;
+  display:grid;grid-template-columns:minmax(0,1fr) 260px;grid-template-rows:auto minmax(0,1fr);gap:10px 16px;
+}
+.bar{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bar h1{font-family:var(--f-display);font-weight:400;font-size:22px;margin:0;letter-spacing:.04em}
+.bar h1 small{font-family:var(--f-body);font-size:12px;color:var(--muted);letter-spacing:.08em;margin-left:8px}
+.bar .round{font-variant-numeric:tabular-nums;color:var(--muted);margin-left:auto}
+.bar .round b{color:var(--ink);font-family:var(--f-display);font-weight:400;font-size:16px;margin-inline:2px}
+
+.btn{border:1px solid var(--line);background:rgba(255,255,255,.06);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:700;white-space:nowrap}
+.btn:hover:not(:disabled){background:rgba(255,255,255,.12)}
+.btn:disabled{opacity:.38;cursor:not-allowed}
+.btn.primary{background:var(--gold);color:var(--gold-ink);border-color:transparent}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08);background:var(--gold)}
+.btn.small{padding:5px 10px;font-size:13px}
+
+main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px;min-height:0;min-width:0}
+
+/* opponents */
+#opps{display:flex;align-items:stretch;gap:6px}
+.opp{position:relative;flex:1 1 0;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:rgba(0,0,0,.14);display:grid;gap:4px;transition:border-color .2s, box-shadow .2s}
+.opp.is-turn{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold), 0 0 18px rgba(232,177,74,.25)}
+.opp.is-out{opacity:.6}
+.opp-name{font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.opp-meta{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.opp-fan{display:flex;height:30px;padding-left:2px}
+.opp-fan .mini{width:20px;height:30px;border-radius:3px;margin-left:-11px;flex:none;border:1.5px solid var(--paper)}
+.opp-fan .mini:first-child{margin-left:0}
+.flow{align-self:center;color:var(--gold);font-weight:700;font-size:16px;flex:none}
+.bubble{position:absolute;top:-9px;right:8px;background:var(--paper);color:var(--card-ink);font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.bubble.skip{background:var(--lacquer);color:var(--paper)}
+.badge{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted);letter-spacing:.04em}
+.badge.t0{background:var(--gold);color:var(--gold-ink);border-color:transparent}
+.badge.tlast{background:rgba(0,0,0,.35);color:var(--muted)}
+
+/* table */
+#table{
+  position:relative;min-height:220px;border-radius:140px/100px;
+  background:radial-gradient(ellipse at 50% 45%, var(--felt-2) 0%, var(--felt) 70%);
+  box-shadow:inset 0 0 0 2px var(--line), inset 0 12px 40px rgba(0,0,0,.35), 0 0 0 8px rgba(0,0,0,.18);
+  display:grid;grid-template-columns:1fr auto 1fr;grid-template-rows:auto 1fr;align-items:center;padding:14px 28px 18px;gap:8px;
+}
+#chips{grid-column:1/-1;display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+.chip{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.on{background:var(--lacquer);color:var(--paper);border-color:transparent}
+.chip.dir{color:var(--ink)}
+#field{grid-column:2;display:grid;justify-items:center;gap:8px;min-width:0}
+.field-cards{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.field-cards .card{--cw:var(--fcw);--ch:var(--fch)}
+.field-by{font-size:13px;color:var(--muted);text-align:center}
+.field-by b{color:var(--ink)}
+.field-empty{width:calc(var(--fcw)*2.2);height:var(--fch);border:1.5px dashed var(--line);border-radius:10px;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center;padding:6px}
+#pile{grid-column:3;justify-self:end;display:grid;justify-items:center;gap:4px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+#pile .stack{position:relative;width:var(--cw);height:var(--ch)}
+#pile .stack .back{position:absolute;inset:0}
+#pile .stack .back:nth-child(2){transform:translate(-3px,-3px)}
+#pile .stack .back:nth-child(3){transform:translate(-6px,-6px)}
+#pile .empty{width:var(--cw);height:var(--ch);border:1.5px dashed var(--line);border-radius:7px}
+#pile b{color:var(--ink);font-size:13px}
+#banner{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font-family:var(--f-display);font-size:clamp(28px,6vw,52px);color:var(--gold);text-shadow:0 3px 0 var(--felt-3), 0 0 24px rgba(0,0,0,.6);white-space:nowrap;opacity:0}
+#banner.show{animation:pop 1.3s ease-out forwards}
+@keyframes pop{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.08)}25%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%) scale(1)}}
+
+/* cards */
+.card{position:relative;width:var(--cw);height:var(--ch);border-radius:7px;background:var(--paper);color:var(--card-ink);border:1px solid rgba(0,0,0,.2);box-shadow:0 1px 0 rgba(0,0,0,.3), 0 4px 10px rgba(0,0,0,.28);flex:none;font-family:var(--f-index);padding:0;text-align:left}
+.card.red{color:var(--red)}
+.card .idx{position:absolute;top:4px;left:5px;font-weight:800;font-size:calc(var(--cw)*.3);line-height:1;display:flex;flex-direction:column;align-items:center}
+.card .idx i{font-style:normal;font-size:.75em;margin-top:2px}
+.card .pip{position:absolute;inset:0;display:grid;place-items:center;font-size:calc(var(--cw)*.56);padding-top:8%}
+.card .tag{position:absolute;right:4px;bottom:4px;font-family:var(--f-display);font-size:calc(var(--cw)*.21);line-height:1;background:var(--card-ink);color:var(--paper);border-radius:3px;padding:2px 3px}
+.card.red .tag{background:var(--red)}
+.card.joker{background:linear-gradient(160deg,var(--paper) 0 60%, #f1e2c2 100%)}
+.card.joker .idx{color:var(--lacquer);font-size:calc(var(--cw)*.22)}
+.card.joker .pip{color:var(--lacquer);font-family:var(--f-display);font-size:calc(var(--cw)*.2);writing-mode:vertical-rl;letter-spacing:.1em}
+.back,.mini{background-color:var(--lacquer);background-image:
+  radial-gradient(circle at 50% 100%, transparent 0 4px, rgba(251,247,238,.22) 4px 5px, transparent 5px 8px, rgba(251,247,238,.22) 8px 9px, transparent 9px);
+  background-size:14px 7px;border-radius:7px;border:2px solid var(--paper);box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.back{width:var(--cw);height:var(--ch)}
+
+/* me */
+#me{border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px;min-width:0}
+#me.is-turn .me-name{color:var(--gold)}
+.me-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:26px}
+.me-name{font-weight:700;font-size:15px}
+.me-count{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+#status{font-size:13px;color:var(--ink);flex:1 1 220px;min-width:0}
+#status.warn{color:#f0a3a8}
+#status.ok{color:var(--gold)}
+#hand{display:flex;justify-content:center;padding-top:16px;min-height:calc(var(--ch) + 18px);overflow:visible}
+#hand .card{cursor:pointer;transition:transform .12s ease, opacity .15s, box-shadow .12s}
+#hand .card:hover{transform:translateY(-4px)}
+#hand .card.sel{transform:translateY(-15px);box-shadow:0 0 0 2px var(--gold), 0 8px 16px rgba(0,0,0,.35)}
+#hand .card.dim{opacity:.5}
+#hand .card.fresh::after{content:"NEW";position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-family:var(--f-body);font-size:9px;font-weight:700;letter-spacing:.08em;background:var(--gold);color:var(--gold-ink);padding:1px 5px;border-radius:999px}
+.actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+
+/* log */
+#log{min-height:0;display:flex;flex-direction:column;border-left:1px solid var(--line);padding-left:14px}
+#log h2{font-size:12px;letter-spacing:.12em;color:var(--muted);margin:2px 0 6px;font-weight:700}
+#logList{list-style:none;margin:0;padding:0;overflow:auto;min-height:0;flex:1;font-size:12.5px;line-height:1.55}
+#logList li{padding:3px 0;border-bottom:1px solid rgba(226,240,238,.06)}
+#logList li.me{color:var(--gold)}
+#logList li.fx{color:#f3c6ca;padding-left:10px}
+#logList li.win{color:var(--paper);font-weight:700}
+#logList li.round{color:var(--muted);text-align:center;letter-spacing:.1em;padding:6px 0}
+#logList li.dim{color:var(--muted)}
+
+/* sheet */
+#overlay{position:fixed;inset:0;background:rgba(5,16,20,.62);display:grid;place-items:center;padding:16px;z-index:10}
+.sheet{background:var(--felt-3);border:1px solid var(--line);border-radius:14px;max-width:560px;width:100%;max-height:calc(100% - 8px);overflow:auto;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.sheet h2{font-family:var(--f-display);font-weight:400;font-size:22px;margin:0 0 12px;text-wrap:balance}
+.sheet h3{font-size:13px;letter-spacing:.1em;color:var(--gold);margin:16px 0 6px}
+.sheet p,.sheet li{line-height:1.7;max-width:65ch}
+.sheet ul{padding-left:1.2em;margin:4px 0}
+.sheet .row{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+.fxlist{display:grid;grid-template-columns:auto auto 1fr;gap:6px 10px;align-items:center;margin:6px 0}
+.fxlist .k{font-family:var(--f-index);font-weight:800;font-size:18px}
+.fxlist .t{font-family:var(--f-display);background:var(--card-ink);color:var(--paper);border-radius:3px;padding:2px 5px;font-size:12px;justify-self:start;border:1px solid var(--line)}
+table.res{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+table.res th,table.res td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
+table.res th{font-size:12px;color:var(--muted);font-weight:500}
+table.res td.num{text-align:right}
+table.res tr.me td{color:var(--gold)}
+.form{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:center}
+.form label{color:var(--muted)}
+.form select{font:inherit;background:var(--felt);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.note{color:var(--muted);font-size:13px}
+
+@media (max-width:860px){
+  #app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;height:auto;min-height:100%}
+  #log{border-left:0;border-top:1px solid var(--line);padding-left:0;padding-top:8px;max-height:240px}
+  :root{--cw:48px;--ch:70px;--fcw:52px;--fch:76px}
+  #table{border-radius:60px/50px;padding:12px 14px 14px;min-height:200px}
+}
+@media (max-width:520px){
+  .opp{padding:6px 7px}
+  .opp-fan{display:none}
+  .bar h1 small{display:none}
+  #table{grid-template-columns:1fr auto;grid-template-rows:auto auto 1fr}
+  #field{grid-column:1/-1;grid-row:2}
+  #pile{grid-column:1/-1;grid-row:3;justify-self:center;grid-auto-flow:column;align-items:center;gap:8px}
+  #pile .stack,#pile .empty{--cw:30px;--ch:44px}
+}
+@media (prefers-reduced-motion:reduce){
+  #banner.show{animation:fade 1.3s linear forwards}
+  @keyframes fade{0%,80%{opacity:1}100%{opacity:0}}
+  #hand .card{transition:none}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header class="bar">
+    <h1>山札大貧民<small>パスしたら一枚引ける</small></h1>
+    <div class="round">第<b id="roundNo">1</b>局</div>
+    <button class="btn small" data-act="rules" type="button">ルール</button>
+    <button class="btn small" data-act="settings" type="button">設定</button>
+  </header>
+
+  <main>
+    <section id="opps" aria-label="対戦相手"></section>
+    <section id="table" aria-label="場">
+      <div id="chips"></div>
+      <div id="field"></div>
+      <div id="pile"></div>
+      <div id="banner" aria-live="polite"></div>
+    </section>
+    <section id="me" aria-label="あなたの手札">
+      <div class="me-head">
+        <span class="me-name">あなた</span>
+        <span id="meBadge"></span>
+        <span class="me-count" id="meCount"></span>
+        <span id="status"></span>
+      </div>
+      <div id="hand"></div>
+      <div class="actions" id="actions"></div>
+    </section>
+  </main>
+
+  <aside id="log">
+    <h2>進行ログ</h2>
+    <ul id="logList"></ul>
+  </aside>
+</div>
+
+<div id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+<script>
+(function(){
+const RANKS=['3','4','5','6','7','8','9','10','J','Q','K','A','2'];
+const R3=0,R7=4,R8=5,R9=6,RJ=8,JOKER=13;
+const SUITS=['S','H','D','C'];
+const SYM={S:'♠',H:'♥',D:'♦',C:'♣',X:'★'};
+const SUIT_IDX={S:0,H:1,D:2,C:3,X:4};
+const LEAD_SUIT={D:0,C:1,H:2,S:3,X:9};
+const TAG={4:'返',5:'切',6:'飛',8:'逆'};
+const NAMES=['ミナト','サクラ','ケンジ','アオイ'];
+const $=s=>document.querySelector(s);
+
+const DEFAULTS={players:4,hand:8,jokers:0,seq:true,recycle:true,speed:800,seqCmp:'low',seqRev:true,lockColor:true,lockSuit:true,lockNum:true};
+let CFG=loadCfg();
+let S=null, sel=new Set(), timer=null, shownBanner=0, sheet=null, hintMsg='';
+
+function loadCfg(){
+  const d={...DEFAULTS};
+  try{const s=JSON.parse(localStorage.getItem('yamafuda-cfg')||'null'); if(s) Object.assign(d,s);}catch(e){}
+  return d;
+}
+function saveCfg(){try{localStorage.setItem('yamafuda-cfg',JSON.stringify(CFG));}catch(e){}}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function mod(x){return ((x%S.n)+S.n)%S.n;}
+function mean(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0;}
+function cardText(c){return c.r===JOKER?'ジョーカー':SYM[c.s]+RANKS[c.r];}
+function titlesFor(n){return n===3?['大富豪','平民','大貧民']:n===4?['大富豪','富豪','貧民','大貧民']:['大富豪','富豪','平民','貧民','大貧民'];}
+
+/* ---------- strength ---------- */
+function reversed(){return S.rev!==S.eb;}
+function stronger(a,b){
+  if(a===JOKER) return b!==JOKER;
+  if(b===JOKER) return false;
+  return reversed()?a<b:a>b;
+}
+function sortHand(h){
+  h.sort((a,b)=>{
+    if(a.r===JOKER||b.r===JOKER) return (a.r===JOKER)-(b.r===JOKER);
+    return (S&&S.rev? b.r-a.r : a.r-b.r) || SUIT_IDX[a.s]-SUIT_IDX[b.s];
+  });
+  return h;
+}
+
+/* ---------- play parsing ---------- */
+function interpretations(cards){
+  const res=[]; if(!cards.length) return res;
+  const nat=cards.filter(c=>c.r!==JOKER);
+  if(!nat.length){res.push({type:'group',rank:JOKER,count:cards.length});return res;}
+  if(nat.every(c=>c.r===nat[0].r)) res.push({type:'group',rank:nat[0].r,count:cards.length});
+  const L=cards.length;
+  if(S.cfg.seq && L>=3 && nat.every(c=>c.s===nat[0].s)){
+    const rs=nat.map(c=>c.r).sort((a,b)=>a-b);
+    let distinct=true; for(let i=1;i<rs.length;i++) if(rs[i]===rs[i-1]) distinct=false;
+    const lo=rs[0], hi=rs[rs.length-1];
+    if(distinct && hi-lo+1<=L){
+      const lows=[]; for(let l=Math.max(0,hi-L+1); l<=Math.min(lo,13-L); l++) lows.push(l);
+      if(lows.length) res.push({type:'seq',count:L,lows,suit:nat[0].s});
+    }
+  }
+  return res;
+}
+function resolve(pp,field,cards,ignoreLocks){
+  if(pp.type==='group'){
+    const p={type:'group',rank:pp.rank,count:pp.count};
+    if(!field) return p;
+    if(field.type!=='group'||field.count!==p.count) return null;
+    if(p.count===1&&field.rank===JOKER&&cards[0].r===R3&&cards[0].s==='S') return {...p,spade3:true};
+    if(!stronger(p.rank,field.rank)) return null;
+    return ignoreLocks||fitsLocks(p,cards,field)?p:null;
+  }
+  const rv=reversed(); const lows=pp.lows.slice(); if(!rv) lows.reverse();
+  for(const l of lows){
+    const p={type:'seq',count:pp.count,low:l,high:l+pp.count-1,suit:pp.suit};
+    if(!field) return p;
+    if(field.type!=='seq'||field.count!==p.count) return null;
+    const beats=S.cfg.seqCmp==='strict'?(rv?p.high<field.low:p.low>field.high):(rv?p.low<field.low:p.low>field.low);
+    if(beats&&(ignoreLocks||fitsLocks(p,cards,field))) return p;
+  }
+  return null;
+}
+function resolveAny(cards,field,ignoreLocks){
+  for(const it of interpretations(cards)){const r=resolve(it,field,cards,ignoreLocks); if(r) return r;}
+  return null;
+}
+
+/* ---------- locks (縛り) ---------- */
+function colorOf(c){return c.s==='H'||c.s==='D'?'R':'B';}
+function sig(cards,fn){return cards.some(c=>c.r===JOKER)?null:cards.map(fn).sort();}
+function fitsMulti(cards,arr,fn){
+  const need={}; arr.forEach(k=>need[k]=(need[k]||0)+1);
+  for(const c of cards){if(c.r===JOKER) continue; const k=fn(c); if(!need[k]) return false; need[k]--;}
+  return true;
+}
+function isStep(p,old){
+  const st=reversed()?-1:1;
+  if(p.type!==old.type||p.count!==old.count) return false;
+  if(p.type==='group') return p.rank!==JOKER&&old.rank!==JOKER&&p.rank===old.rank+st;
+  if(S.cfg.seqCmp==='strict') return st>0?p.low===old.high+1:p.high===old.low-1;
+  return p.low===old.low+st;
+}
+function fitsLocks(p,cards,field){
+  if(cards.every(c=>c.r===JOKER)) return true;
+  const L=S.lock;
+  if(L.suit&&!fitsMulti(cards,L.suit,c=>c.s)) return false;
+  if(L.color&&!fitsMulti(cards,L.color,colorOf)) return false;
+  if(L.num&&!isStep(p,field)) return false;
+  return true;
+}
+function suitText(arr){return arr.map(s=>SYM[s]).join('');}
+function colorText(arr){
+  const r=arr.filter(x=>x==='R').length,b=arr.length-r;
+  if(!b) return '赤'; if(!r) return '黒';
+  return `赤${r}黒${b}`;
+}
+function nextNumText(){
+  const f=S.field; if(!f) return '';
+  const st=reversed()?-1:1;
+  if(f.type==='group'){const r=f.rank+st; return f.rank===JOKER||r<0||r>12?'なし':RANKS[r];}
+  let l;
+  if(S.cfg.seqCmp==='strict') l=st>0?f.high+1:f.low-f.count; else l=f.low+st;
+  if(l<0||l+f.count-1>12) return 'なし';
+  return `${RANKS[l]}〜${RANKS[l+f.count-1]}`;
+}
+function lockSummary(){
+  const L=S.lock,out=[];
+  if(L.suit) out.push(`${suitText(L.suit)}のみ`); else if(L.color) out.push(`${colorText(L.color)}のみ`);
+  if(L.num) out.push(`次は${nextNumText()}`);
+  return out.join('・');
+}
+function lockReason(cards){
+  const p=resolveAny(cards,S.field,true); if(!p) return null;
+  const L=S.lock;
+  if(L.suit&&!fitsMulti(cards,L.suit,c=>c.s)) return `スート縛り中：${suitText(L.suit)}の札しか出せません`;
+  if(L.color&&!fitsMulti(cards,L.color,colorOf)) return `色縛り中：${colorText(L.color)}の札しか出せません`;
+  if(L.num) return `数字縛り中：次は${nextNumText()}しか出せません`;
+  return null;
+}
+function updateLocks(old,play,cards){
+  const out=[],L=S.lock;
+  if(S.cfg.lockSuit&&!L.suit){
+    const a=sig(old.cards,c=>c.s),b=sig(cards,c=>c.s);
+    if(a&&b&&a.join()===b.join()){L.suit=b; out.push(`${suitText(b)}縛り`);}
+  }
+  if(S.cfg.lockColor&&!L.color){
+    const a=sig(old.cards,colorOf),b=sig(cards,colorOf);
+    if(a&&b&&a.join()===b.join()){L.color=b; if(!L.suit) out.push(`${colorText(b)}縛り`);}
+  }
+  if(S.cfg.lockNum&&!L.num&&isStep(play,old)){L.num=true; out.push('数字縛り');}
+  return out;
+}
+function ranksOf(p){return p.type==='group'?Array(p.count).fill(p.rank):Array.from({length:p.count},(_,i)=>p.low+i);}
+function describe(p){
+  if(p.type==='seq') return `${SYM[p.suit]}${RANKS[p.low]}〜${RANKS[p.high]}の階段`;
+  const name=p.rank===JOKER?'ジョーカー':RANKS[p.rank];
+  const kinds=['','','のペア','のスリーカード','の4枚'];
+  return name+(kinds[p.count]||`の${p.count}枚`);
+}
+function whyNot(cards){
+  const ints=interpretations(cards);
+  if(!ints.length) return S.cfg.seq?'同じ数字どうしか、同じスートで3枚以上の連番にしてください':'同じ数字の札だけを組み合わせてください';
+  const f=S.field; if(!f) return '';
+  if(!ints.some(p=>p.type===f.type&&p.count===f.count))
+    return f.type==='seq'?`場は${f.count}枚の階段です。同じ枚数の階段で出してください`:`場と同じ${f.count}枚で出してください`;
+  const lr=lockReason(cards); if(lr) return lr;
+  return reversed()?'今は強さが逆転中。場より小さい数字が必要です':'場より強い札が必要です';
+}
+
+/* ---------- move generation ---------- */
+function candidates(hand){
+  const out=[]; const jk=hand.filter(c=>c.r===JOKER); const by={};
+  hand.forEach(c=>{if(c.r!==JOKER)(by[c.r]=by[c.r]||[]).push(c);});
+  for(const r in by){
+    let arr=by[r];
+    if(+r===R3) arr=arr.filter(c=>c.s!=='S').concat(arr.filter(c=>c.s==='S'));
+    for(let k=1;k<=arr.length;k++) for(let j=0;j<=jk.length;j++) out.push(arr.slice(0,k).concat(jk.slice(0,j)));
+    if(+r===R3){const s3=arr.find(c=>c.s==='S'); if(s3&&arr.length>1) out.push([s3]);}
+  }
+  for(let j=1;j<=jk.length;j++) out.push(jk.slice(0,j));
+  if(S.cfg.seq){
+    for(const s of SUITS) for(let low=0;low<=10;low++){
+      const cs=[]; let miss=0;
+      for(let r=low;r<13;r++){
+        const c=hand.find(x=>x.s===s&&x.r===r);
+        if(c) cs.push(c); else miss++;
+        if(miss>jk.length) break;
+        const len=r-low+1;
+        if(len>=3&&cs.length>=2) out.push(cs.concat(jk.slice(0,miss)));
+      }
+    }
+  }
+  return out;
+}
+function legalMoves(hand){
+  const res=[];
+  for(const cards of candidates(hand)){const play=resolveAny(cards,S.field); if(play) res.push({cards,play});}
+  return res;
+}
+function longVal(r){
+  if(r===JOKER) return 15;
+  let v=S.rev?12-r:r;
+  if(r===R8) v=Math.max(v,9);
+  return v;
+}
+function chooseMove(seat,hint){
+  const hand=S.players[seat].hand; const moves=legalMoves(hand);
+  if(!moves.length) return null;
+  const fin=moves.find(m=>m.cards.length===hand.length); if(fin) return fin;
+  const counts={}; hand.forEach(c=>counts[c.r]=(counts[c.r]||0)+1);
+  let best=null,bs=-1e9;
+  for(const m of moves){
+    const vals=m.cards.map(c=>longVal(c.r));
+    let sc=m.cards.length*2.2-mean(vals)-Math.max(...vals)*0.3;
+    if(m.play.type==='group'&&m.play.rank!==JOKER){
+      const nat=m.cards.filter(c=>c.r!==JOKER).length;
+      if(nat<counts[m.play.rank]) sc-=3;
+    }
+    if(isRevolution(m.play)){
+      const rest=hand.filter(c=>!m.cards.includes(c));
+      sc+=mean(rest.map(c=>longVal(c.r)))<6?6:-6;
+    }
+    if(m.play.type==='seq') sc+=1;
+    if(m.cards.length>1&&m.cards.some(c=>c.r===JOKER)) sc-=4;
+    const rk=ranksOf(m.play);
+    if(rk.includes(R8)&&S.field) sc+=3;
+    if(rk.includes(R9)&&S.field) sc+=0.5;
+    if(!hint) sc+=Math.random()*1.2;
+    if(sc>bs){bs=sc;best=m;}
+  }
+  if(S.field&&!hint){
+    const avg=mean(best.cards.map(c=>longVal(c.r)));
+    const hs=hand.length;
+    if(!ranksOf(best.play).includes(R8)){
+      if(avg>=10&&hs>3&&Math.random()<0.55) return null;
+      if(avg>=12&&hs>2&&Math.random()<0.5) return null;
+    }
+  }
+  return best;
+}
+function isRevolution(p){
+  return (p.type==='group'&&p.count>=4&&p.rank!==JOKER)||(p.type==='seq'&&p.count>=5&&S.cfg.seqRev);
+}
+function canDraw(){return S.deck.length>0||(S.cfg.recycle&&S.discard.length>0);}
+function cpuWantsDraw(seat){
+  const P=S.players[seat];
+  if(!canDraw()||P.hand.length<=2) return false;
+  let p=P.drawTend;
+  if(mean(P.hand.map(c=>longVal(c.r)))<5) p+=0.3;
+  if(P.hand.length>=9) p-=0.3;
+  return Math.random()<p;
+}
+
+/* ---------- game flow ---------- */
+function log(t,cls){S.log.unshift({t,cls:cls||''}); if(S.log.length>120) S.log.length=120;}
+function flash(t){S.banner={text:t,id:(S.banner?S.banner.id:0)+1};}
+
+function buildDeck(){
+  const d=[]; let id=0;
+  for(const s of SUITS) for(let r=0;r<13;r++) d.push({id:id++,s,r});
+  for(let j=0;j<S.cfg.jokers;j++) d.push({id:id++,s:'X',r:JOKER});
+  return shuffle(d);
+}
+function newGame(){
+  clearTimeout(timer); sel.clear();
+  const n=CFG.players;
+  S={n,cfg:{...CFG},round:0,players:[],log:[],prevOrder:null,banner:null};
+  const names=shuffle(NAMES.slice());
+  for(let i=0;i<n;i++) S.players.push({name:i===0?'あなた':names[i-1],isHuman:i===0,hand:[],finished:false,place:null,score:0,title:null,drawTend:0.15+Math.random()*0.35});
+  startRound();
+}
+function startRound(){
+  clearTimeout(timer); sel.clear(); hintMsg='';
+  S.round++;
+  Object.assign(S,{discard:[],field:null,lastPlayer:null,dir:1,rev:false,eb:false,skip:0,lock:{color:null,suit:null,num:false},finishOrder:[],marks:{},fresh:[],ex:null,phase:'play',turn:0,result:null});
+  const deck=buildDeck();
+  S.players.forEach(P=>{P.hand=sortHand(deck.splice(0,S.cfg.hand));P.finished=false;P.place=null;});
+  S.deck=deck;
+  log(`第${S.round}局`,'round');
+  if(S.prevOrder){
+    const t=titlesFor(S.n);
+    S.prevOrder.forEach((seat,i)=>S.players[seat].title=t[i]);
+    doExchange();
+  } else startPlay();
+}
+function moveCards(from,to,cards){
+  const ids=new Set(cards.map(c=>c.id));
+  from.hand=from.hand.filter(c=>!ids.has(c.id));
+  to.hand.push(...cards); sortHand(from.hand); sortHand(to.hand);
+}
+function doExchange(){
+  const o=S.prevOrder,n=S.n,t=titlesFor(n);
+  const pairs=[{hi:o[0],lo:o[n-1],k:2,hiT:t[0],loT:t[n-1]}];
+  if(n>=4) pairs.push({hi:o[1],lo:o[n-2],k:1,hiT:t[1],loT:t[n-2]});
+  for(const pr of pairs){
+    const hi=S.players[pr.hi],lo=S.players[pr.lo];
+    const give=lo.hand.slice().sort((a,b)=>b.r-a.r).slice(0,pr.k);
+    moveCards(lo,hi,give);
+    if(lo.isHuman) log(`あなた（${pr.loT}）→ ${hi.name}：${give.map(cardText).join('・')}`,'me');
+    else if(hi.isHuman){log(`${lo.name}（${pr.loT}）→ あなた：${give.map(cardText).join('・')}`,'me'); S.fresh=give.map(c=>c.id);}
+    else log(`${lo.name}（${pr.loT}）→ ${hi.name}：一番強い札を${pr.k}枚`,'dim');
+    if(hi.isHuman){S.ex={...pr,got:give};}
+    else{
+      const back=hi.hand.slice().sort((a,b)=>longVal(a.r)-longVal(b.r)).slice(0,pr.k);
+      moveCards(hi,lo,back);
+      if(lo.isHuman){log(`${hi.name}（${pr.hiT}）→ あなた：${back.map(cardText).join('・')}`,'me'); S.fresh=back.map(c=>c.id);}
+      else log(`${hi.name}（${pr.hiT}）→ ${lo.name}：いらない札を${pr.k}枚`,'dim');
+    }
+  }
+  if(S.ex){S.phase='exchange'; render();} else startPlay();
+}
+function confirmExchange(){
+  const me=S.players[0],ex=S.ex;
+  const cards=[...sel].map(id=>me.hand.find(c=>c.id===id)).filter(Boolean);
+  if(cards.length!==ex.k) return;
+  moveCards(me,S.players[ex.lo],cards);
+  log(`あなた（${ex.hiT}）→ ${S.players[ex.lo].name}：${cards.map(cardText).join('・')}`,'me');
+  S.ex=null; sel.clear(); S.fresh=[];
+  startPlay();
+}
+function startPlay(){
+  S.phase='play';
+  let leader;
+  if(S.prevOrder){
+    leader=S.prevOrder[S.n-1];
+    log(`大貧民の${S.players[leader].name}から開始`);
+  }else{
+    let best=null;
+    S.players.forEach((P,i)=>P.hand.forEach(c=>{
+      if(c.r===JOKER) return;
+      const k=c.r*10+LEAD_SUIT[c.s];
+      if(!best||k<best.k) best={k,i,c};
+    }));
+    leader=best.i;
+    log(`一番弱い札（${cardText(best.c)}）を持つ${S.players[leader].name}から開始`);
+  }
+  S.turn=leader; schedule();
+}
+function activeSeats(){return S.players.map((_,i)=>i).filter(i=>!S.players[i].finished);}
+function nextActive(s){for(let i=0;i<S.n;i++){s=mod(s+S.dir); if(!S.players[s].finished) return s;} return s;}
+function clearField(){
+  if(S.field) S.discard.push(...S.field.cards);
+  S.field=null; S.lastPlayer=null; S.eb=false; S.marks={};
+  S.lock={color:null,suit:null,num:false};
+}
+function advance(from){
+  let s=from,skips=S.skip; S.skip=0; const skipped=[];
+  for(let i=0;i<200;i++){
+    s=mod(s+S.dir);
+    if(s===S.lastPlayer){
+      if(skipped.length) log(`→ スキップ：${skipped.join('、')}`,'fx');
+      const lp=s; clearField();
+      S.turn=S.players[lp].finished?nextActive(lp):lp;
+      log(`場が流れた。${S.players[S.turn].name}から`,'dim');
+      return;
+    }
+    if(S.players[s].finished) continue;
+    if(skips>0){skips--; skipped.push(S.players[s].name); S.marks[s]='skip'; continue;}
+    if(skipped.length) log(`→ スキップ：${skipped.join('、')}`,'fx');
+    S.turn=s; return;
+  }
+}
+function fieldOrder(cards,play){
+  const nat=cards.filter(c=>c.r!==JOKER),jk=cards.filter(c=>c.r===JOKER);
+  if(play.type!=='seq') return nat.concat(jk);
+  const out=[];let j=0;
+  for(let r=play.low;r<=play.high;r++){const c=nat.find(x=>x.r===r); out.push(c||jk[j++]);}
+  return out;
+}
+function doPlay(seat,cards){
+  const P=S.players[seat];
+  const play=resolveAny(cards,S.field);
+  if(!play) return false;
+  const ids=new Set(cards.map(c=>c.id));
+  P.hand=P.hand.filter(c=>!ids.has(c.id));
+  const old=S.field;
+  if(old) S.discard.push(...old.cards);
+  S.field={...play,cards:fieldOrder(cards,play),by:seat};
+  delete S.marks[seat];
+  if(seat===0){sel.clear(); S.fresh=[]; hintMsg='';}
+  const rk=ranksOf(play),cnt=r=>rk.filter(x=>x===r).length;
+  const fx=[],notes=[];
+  const eight=cnt(R8)>0,cut=eight||!!play.spade3;
+  if(old&&!cut){
+    const nl=updateLocks(old,play,S.field.cards);
+    if(nl.length){fx.push(...nl); notes.push(`縛り：場が流れるまで ${lockSummary()}`);}
+  }
+  if(play.spade3) fx.push('スペ3返し');
+  if(isRevolution(play)){
+    S.rev=!S.rev; fx.push(S.rev?'革命':'革命返し');
+    notes.push(S.rev?'革命：この局が終わるまで弱い数字ほど強い':'革命返し：強さが元に戻った');
+    S.players.forEach(p=>sortHand(p.hand));
+  }
+  if(cnt(R7)>0){S.dir*=-1; fx.push('リバース'); notes.push(`リバース：${S.dir===1?'時計回り':'反時計回り'}に`);}
+  if(cnt(RJ)>0&&!cut){S.eb=true; fx.push('11バック'); notes.push('11バック：場が流れるまで強さが逆に');}
+  const skip=cut?0:cnt(R9);
+  if(skip) fx.push(skip>1?`スキップ×${skip}`:'スキップ');
+  if(eight) fx.push('8切り');
+  log(`${P.name}：${describe(play)}`,seat===0?'me':'');
+  notes.forEach(t=>log('→ '+t,'fx'));
+  if(fx.length) flash(fx.join('・'));
+  if(!P.hand.length){P.finished=true; S.finishOrder.push(seat); P.place=S.finishOrder.length; log(`${P.name}が上がり（${P.place}位）`,'win');}
+  const act=activeSeats();
+  if(act.length<=1){
+    if(act.length===1){const L=S.players[act[0]]; L.finished=true; S.finishOrder.push(act[0]); L.place=S.finishOrder.length;}
+    endRound(); return true;
+  }
+  if(cut){
+    clearField();
+    S.turn=P.finished?nextActive(seat):seat;
+    log(`→ ${eight?'8切り':'スペ3返し'}：場が流れ、${S.players[S.turn].name}から`,'fx');
+    schedule(); return true;
+  }
+  S.lastPlayer=seat; S.skip=skip; advance(seat); schedule(); return true;
+}
+function doPass(seat,draw){
+  if(!S.field) return;
+  const P=S.players[seat]; let drew=null;
+  if(draw){
+    if(!S.deck.length&&S.cfg.recycle&&S.discard.length){S.deck=shuffle(S.discard); S.discard=[]; log('捨て札を切り直して山札にした','dim');}
+    if(S.deck.length){drew=S.deck.pop(); P.hand.push(drew); sortHand(P.hand);}
+  }
+  if(seat===0){sel.clear(); hintMsg=''; S.fresh=drew?[drew.id]:[];}
+  S.marks[seat]=drew?'draw':'pass';
+  log(`${P.name}：パス${drew?(seat===0?`（${cardText(drew)}を引いた）`:'（山札から1枚引いた）'):''}`,seat===0?'me':'dim');
+  advance(seat); schedule();
+}
+function endRound(){
+  clearTimeout(timer);
+  S.phase='roundEnd';
+  const t=titlesFor(S.n);
+  S.result=S.finishOrder.map((seat,i)=>({seat,title:t[i],pts:S.n-1-i}));
+  S.result.forEach(r=>S.players[r.seat].score+=r.pts);
+  S.prevOrder=S.finishOrder.slice();
+  log(`第${S.round}局終了：大富豪は${S.players[S.finishOrder[0]].name}`,'round');
+  render();
+}
+function schedule(){
+  clearTimeout(timer); render();
+  if(S.phase!=='play'||S.players[S.turn].isHuman) return;
+  const fast=S.players[0].finished;
+  timer=setTimeout(cpuTurn,fast?Math.max(250,S.cfg.speed*0.45):S.cfg.speed);
+}
+function cpuTurn(){
+  if(S.phase!=='play'||S.players[S.turn].isHuman) return;
+  const seat=S.turn,m=chooseMove(seat,false);
+  if(m) doPlay(seat,m.cards); else doPass(seat,cpuWantsDraw(seat));
+}
+
+/* ---------- rendering ---------- */
+function cardHTML(c,cls,asButton){
+  const tagN=asButton?'button':'div';
+  const attrs=asButton?` type="button" data-id="${c.id}" aria-pressed="${cls.includes('sel')}" aria-label="${cardText(c)}"`:'';
+  if(c.r===JOKER) return `<${tagN} class="card joker ${cls}"${attrs}><span class="idx">JK<i>★</i></span><span class="pip">JOKER</span></${tagN}>`;
+  const red=c.s==='H'||c.s==='D';
+  const tag=TAG[c.r]?`<span class="tag">${TAG[c.r]}</span>`:'';
+  return `<${tagN} class="card ${red?'red':''} ${cls}"${attrs}><span class="idx">${RANKS[c.r]}<i>${SYM[c.s]}</i></span><span class="pip">${SYM[c.s]}</span>${tag}</${tagN}>`;
+}
+function badge(P){
+  if(!P.title) return '';
+  const t=titlesFor(S.n); const i=t.indexOf(P.title);
+  return `<span class="badge ${i===0?'t0':i===t.length-1?'tlast':''}">${P.title}</span>`;
+}
+function markHTML(seat){
+  const m=S.marks[seat];
+  if(!m) return '';
+  if(m==='skip') return '<span class="bubble skip">スキップ</span>';
+  return `<span class="bubble">${m==='draw'?'パス＋1枚':'パス'}</span>`;
+}
+function renderOpps(){
+  let h='';
+  for(let i=1;i<S.n;i++){
+    const P=S.players[i],on=S.phase==='play'&&S.turn===i;
+    const fan=P.finished?'':Array.from({length:Math.min(P.hand.length,12)},()=>'<span class="mini"></span>').join('');
+    h+=`<div class="opp ${on?'is-turn':''} ${P.finished?'is-out':''}">
+      ${markHTML(i)}
+      <div class="opp-name">${P.name}${badge(P)}</div>
+      <div class="opp-fan">${fan}</div>
+      <div class="opp-meta">${P.finished?`${P.place}位で上がり`:`${P.hand.length}枚`}${on?' · 考え中…':''}</div>
+    </div>`;
+    if(i<S.n-1) h+=`<span class="flow" aria-hidden="true">${S.dir===1?'→':'←'}</span>`;
+  }
+  $('#opps').innerHTML=h;
+}
+function renderTable(){
+  const rv=reversed();
+  $('#chips').innerHTML=
+    `<span class="chip dir">${S.dir===1?'↻ 時計回り':'↺ 反時計回り'}</span>`+
+    `<span class="chip ${rv?'on':''}">強さ ${rv?'2＜A＜…＜4＜3':'3＜4＜…＜A＜2'}</span>`+
+    `<span class="chip ${S.rev?'on':''}">革命${S.rev?'中':''}</span>`+
+    `<span class="chip ${S.eb?'on':''}">11バック${S.eb?'中':''}</span>`+
+    (S.lock.suit?`<span class="chip on">${suitText(S.lock.suit)}縛り</span>`:S.lock.color?`<span class="chip on">${colorText(S.lock.color)}縛り</span>`:'')+
+    (S.lock.num&&S.field?`<span class="chip on">数字縛り 次は${nextNumText()}</span>`:'');
+  if(S.field){
+    const by=S.players[S.field.by];
+    $('#field').innerHTML=`<div class="field-cards">${S.field.cards.map(c=>cardHTML(c,'',false)).join('')}</div>
+      <div class="field-by"><b>${by.name}</b>　${describe(S.field)}</div>`;
+  }else{
+    const who=S.phase==='play'?S.players[S.turn].name:'';
+    $('#field').innerHTML=`<div class="field-empty">場は空<br>${who?`${who}が好きな札で始める`:''}</div>`;
+  }
+  const dn=S.deck.length;
+  const stack=dn?`<div class="stack">${'<span class="back"></span>'.repeat(Math.min(3,Math.ceil(dn/6)))}</div>`:'<div class="empty"></div>';
+  $('#pile').innerHTML=`${stack}<div><b>山札 ${dn}</b></div><div>捨て札 ${S.discard.length}</div>`;
+  if(S.banner&&S.banner.id!==shownBanner){
+    shownBanner=S.banner.id;
+    const b=$('#banner'); b.textContent=S.banner.text; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+  }
+}
+function renderMe(){
+  const me=S.players[0];
+  const myTurn=S.phase==='play'&&S.turn===0&&!me.finished;
+  $('#me').classList.toggle('is-turn',myTurn);
+  $('#meBadge').innerHTML=badge(me)+markHTML(0).replace('bubble','badge');
+  $('#meCount').textContent=me.finished?`${me.place}位で上がり`:`${me.hand.length}枚`;
+  [...sel].forEach(id=>{if(!me.hand.some(c=>c.id===id)) sel.delete(id);});
+  const selCards=me.hand.filter(c=>sel.has(c.id));
+
+  let playable=null,moves=null;
+  if(myTurn){moves=legalMoves(me.hand); playable=new Set(); moves.forEach(m=>m.cards.forEach(c=>playable.add(c.id)));}
+  $('#hand').innerHTML=me.hand.map(c=>{
+    const cls=[sel.has(c.id)?'sel':'',playable&&!playable.has(c.id)?'dim':'',S.fresh.includes(c.id)?'fresh':''].join(' ');
+    return cardHTML(c,cls,true);
+  }).join('');
+  layoutHand();
+
+  let msg='',cls='',acts='';
+  const st=$('#status');
+  if(S.phase==='exchange'){
+    const ex=S.ex;
+    msg=`${S.players[ex.lo].name}（${ex.loT}）から ${ex.got.map(cardText).join('・')} を受け取りました。お返しに渡す札を${ex.k}枚選んでください（${selCards.length}/${ex.k}）`;
+    cls=selCards.length===ex.k?'ok':'';
+    acts=`<button class="btn primary" data-act="give" type="button" ${selCards.length===ex.k?'':'disabled'}>この${ex.k}枚を渡す</button>`;
+  }else if(S.phase==='play'){
+    if(me.finished){
+      msg=`${me.place}位で上がりました。残りの勝負を見ています`;
+    }else if(!myTurn){
+      msg=`${S.players[S.turn].name}の番です`;
+    }else{
+      const play=selCards.length?resolveAny(selCards,S.field):null;
+      if(selCards.length){
+        if(play){msg=`${describe(play)}を出せます`; cls='ok';}
+        else{msg=whyNot(selCards); cls='warn';}
+      }else if(hintMsg){msg=hintMsg;}
+      else if(!S.field){msg='あなたの番：場は空です。好きな札を出してください';}
+      else if(!moves.length){msg=`出せる札がありません。パスするか、1枚引いてパス`; cls='warn';}
+      else{const ls=lockSummary(); msg=`あなたの番：${describe(S.field)}より強い札を同じ枚数で出すか、パス${ls?`（縛り：${ls}）`:''}`;}
+      const draw=canDraw();
+      acts=`<button class="btn" data-act="hint" type="button">ヒント</button>
+        <button class="btn" data-act="pass" type="button" ${S.field?'':'disabled'}>パス</button>
+        <button class="btn" data-act="draw" type="button" ${S.field&&draw?'':'disabled'}>${draw?'1枚引いてパス':'山札なし'}</button>
+        <button class="btn primary" data-act="play" type="button" ${play?'':'disabled'}>出す</button>`;
+    }
+  }else if(S.phase==='roundEnd'){
+    msg='局が終わりました';
+    acts=`<button class="btn primary" data-act="result" type="button">結果を見る</button>`;
+  }
+  st.textContent=msg; st.className=cls;
+  $('#actions').innerHTML=acts;
+}
+function layoutHand(){
+  const el=$('#hand'),cs=el.children,n=cs.length; if(!n) return;
+  const W=el.clientWidth,cw=cs[0].offsetWidth,gap=6;
+  let step=cw+gap;
+  if(n>1&&cw*n+gap*(n-1)>W) step=Math.max(14,(W-cw)/(n-1));
+  for(let i=0;i<n;i++) cs[i].style.marginLeft=i?(step-cw)+'px':'0';
+}
+function renderLog(){
+  $('#logList').innerHTML=S.log.map(e=>`<li class="${e.cls}">${e.t}</li>`).join('');
+}
+function render(){
+  $('#roundNo').textContent=S.round;
+  renderOpps(); renderTable(); renderMe(); renderLog(); renderSheet();
+}
+
+/* ---------- sheets ---------- */
+function renderSheet(){
+  const ov=$('#overlay'),sh=$('#sheet');
+  let kind=sheet||(S.phase==='roundEnd'&&!S.resultSeen?'result':null);
+  if(!kind){ov.hidden=true; return;}
+  ov.hidden=false;
+  if(kind==='rules') sh.innerHTML=rulesHTML();
+  else if(kind==='settings') sh.innerHTML=settingsHTML();
+  else sh.innerHTML=resultHTML();
+}
+function resultHTML(){
+  const nextLow=S.players[S.prevOrder[S.n-1]].name;
+  const rows=S.result.map((r,i)=>{const P=S.players[r.seat];
+    return `<tr class="${r.seat===0?'me':''}"><td>${i+1}位</td><td>${P.name}</td><td>${r.title}</td><td class="num">+${r.pts}</td><td class="num">${P.score}</td></tr>`;}).join('');
+  return `<h2>第${S.round}局の結果</h2>
+    <table class="res"><thead><tr><th>順位</th><th>名前</th><th>称号</th><th class="num">今回</th><th class="num">累計</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="note">次の局は配り直したあとに札を交換します。大貧民は一番強い札を${S.n>=4?'2枚、貧民は1枚':'2枚'}差し出し、${nextLow}から始まります。</p>
+    <div class="row"><button class="btn" data-act="closeResult" type="button">場を見る</button><button class="btn primary" data-act="next" type="button">第${S.round+1}局へ</button></div>`;
+}
+function rulesHTML(){
+  const fx=[['7','返','リバース','順番の向きが逆になる'],['8','切','8切り','場が流れ、出した人がもう一度好きな札を出す'],['9','飛','スキップ','次の人を飛ばす。2枚出しなら2人飛ばす'],['J','逆','11バック','場が流れるまで数字の強さが逆になる']];
+  return `<h2>山札大貧民のルール</h2>
+    <p>UNOのカードで遊んだ「パスしたら山から引ける大貧民」をトランプで再現したものです。</p>
+    <h3>基本</h3>
+    <ul>
+      <li>全員に${S.cfg.hand}枚ずつ配り、残りは山札にします。手札を先に出し切った人の勝ち。</li>
+      <li>場の札より強い札を、同じ枚数・同じ形で出します。強さは 3＜4＜…＜K＜A＜2${S.cfg.jokers?'＜ジョーカー':''}。</li>
+      <li>出せる形は、1枚・同じ数字の2〜4枚${S.cfg.seq?'・同じスートで3枚以上の連番（階段）':''}。</li>
+      ${S.cfg.seq?`<li>階段どうしは${S.cfg.seqCmp==='strict'?'全部の札が上回る必要があります（345の次は678以上）':'一番下の札で比べます（345の次に456が出せる）'}。</li>`:''}
+      <li>最後に札を出した人まで順番が戻ったら場が流れ、その人が好きな札から始めます。</li>
+    </ul>
+    <h3>パスと山札</h3>
+    <ul>
+      <li>パスするとき、山札から1枚引いてもかまいません（引かなくてもいい）。引いた札はその番には出せません。</li>
+      <li>${S.cfg.recycle?'山札がなくなったら、流れた札を切り直して新しい山札にします。':'山札がなくなったら、それ以降は引けません。'}</li>
+    </ul>
+    <h3>特殊な札</h3>
+    <div class="fxlist">${fx.map(f=>`<span class="k">${f[0]}</span><span class="t">${f[1]}</span><span><b>${f[2]}</b>：${f[3]}</span>`).join('')}
+      <span class="k">4枚</span><span class="t">革</span><span><b>革命</b>：同じ数字4枚${S.cfg.seq&&S.cfg.seqRev?'、または同じスートで5枚以上の階段':''}で、局の終わりまで強さが逆転。もう一度で元に戻る</span>
+      ${S.cfg.jokers?`<span class="k">JK</span><span class="t">★</span><span><b>ジョーカー</b>：どの札の代わりにもなる。1枚出しでは最強</span>
+      <span class="k">♠3</span><span class="t">返</span><span><b>スペ3返し</b>：1枚出しのジョーカーには♠3が勝ち、そのまま場が流れて♠3を出した人から</span>`:''}
+    </div>
+    <p class="note">手札の右下の小さな字（返・切・飛・逆）が特殊札の目印です。階段に含まれていても効果が出ます。${S.cfg.jokers?'スペ3返しはジョーカーを入れたときだけ起こります。':'スペ3返しは、設定でジョーカーを入れると使えます。'}</p>
+    ${S.cfg.lockColor||S.cfg.lockSuit||S.cfg.lockNum?`<h3>縛り</h3>
+    <p>同じ場で2回続けて条件がそろうと縛りがかかり、場が流れるまで続きます。複数の縛りが重なることもあります。</p>
+    <ul>
+      ${S.cfg.lockColor?'<li><b>色縛り</b>：赤黒の組み合わせが同じ出し方が2回続くと、以後その組み合わせしか出せない（♣3♠3→♣4♠4で黒2枚のみ、♥5♣5→♦6♠6で赤1黒1のみ）。</li>':''}
+      ${S.cfg.lockSuit?'<li><b>スート縛り</b>：マークの組み合わせが同じ出し方が2回続くと、以後そのマークしか出せない。</li>':''}
+      ${S.cfg.lockNum?`<li><b>数字縛り</b>：ちょうど1つ強い数字が2回続くと、以後も1つ強い数字しか出せない（3→4なら次は5、33→44なら55${S.cfg.seq?(S.cfg.seqCmp==='strict'?'、345→678なら次は9〜J':'、345→456なら567'):''}）。革命や11バック中は数字が1つ小さくなる方向です。</li>`:''}
+      <li>1枚出し・ペア・階段のどれにも適用されます。ジョーカーを含む出し方では縛りは発生しませんが、縛り中はジョーカーを好きなマーク・数字として使えます。</li>
+    </ul>`:''}
+    <h3>局と身分</h3>
+    <ul>
+      <li>上がった順に ${titlesFor(S.n).join('・')}。得点は大富豪${S.n-1}点から1点ずつ下がります。</li>
+      <li>2局目からは配ったあと、大貧民が一番強い札を2枚大富豪へ、大富豪が好きな札を2枚大貧民へ渡します${S.n>=4?'（富豪と貧民は1枚ずつ）':''}。先攻は大貧民。</li>
+    </ul>
+    <div class="row"><button class="btn primary" data-act="closeSheet" type="button">閉じる</button></div>`;
+}
+function opt(v,cur,label){return `<option value="${v}" ${String(v)===String(cur)?'selected':''}>${label}</option>`;}
+function settingsHTML(){
+  return `<h2>設定</h2>
+    <div class="form">
+      <label for="setPlayers">人数</label><select id="setPlayers">${[3,4,5].map(v=>opt(v,CFG.players,`${v}人（CPU ${v-1}人）`)).join('')}</select>
+      <label for="setHand">配る枚数</label><select id="setHand">${[5,6,7,8,9,10].map(v=>opt(v,CFG.hand,`${v}枚`)).join('')}</select>
+      <label for="setJokers">ジョーカー</label><select id="setJokers">${[0,1,2].map(v=>opt(v,CFG.jokers,v?`${v}枚`:'なし')).join('')}</select>
+      <label for="setSeq">階段</label><select id="setSeq">${opt('1',CFG.seq?'1':'0','あり')}${opt('0',CFG.seq?'1':'0','なし')}</select>
+      <label for="setSeqCmp">階段の比べ方</label><select id="setSeqCmp">${opt('low',CFG.seqCmp,'一番下の札で比べる（345→456可）')}${opt('strict',CFG.seqCmp,'全部上回る（345→678以上）')}</select>
+      <label for="setSeqRev">階段革命</label><select id="setSeqRev">${opt('1',CFG.seqRev?'1':'0','あり（同スート5連番）')}${opt('0',CFG.seqRev?'1':'0','なし')}</select>
+      <label for="setLockColor">色縛り</label><select id="setLockColor">${opt('1',CFG.lockColor?'1':'0','あり')}${opt('0',CFG.lockColor?'1':'0','なし')}</select>
+      <label for="setLockSuit">スート縛り</label><select id="setLockSuit">${opt('1',CFG.lockSuit?'1':'0','あり')}${opt('0',CFG.lockSuit?'1':'0','なし')}</select>
+      <label for="setLockNum">数字縛り</label><select id="setLockNum">${opt('1',CFG.lockNum?'1':'0','あり')}${opt('0',CFG.lockNum?'1':'0','なし')}</select>
+      <label for="setRecycle">山札切れ</label><select id="setRecycle">${opt('1',CFG.recycle?'1':'0','流れた札を切り直す')}${opt('0',CFG.recycle?'1':'0','それ以降は引けない')}</select>
+      <label for="setSpeed">CPUの速さ</label><select id="setSpeed">${opt(450,CFG.speed,'速い')}${opt(800,CFG.speed,'ふつう')}${opt(1300,CFG.speed,'ゆっくり')}</select>
+    </div>
+    <p class="note">変更は新しいゲームから反映されます。累計点はリセットされます。</p>
+    <div class="row"><button class="btn" data-act="closeSheet" type="button">キャンセル</button><button class="btn primary" data-act="applySettings" type="button">この設定で新しく始める</button></div>`;
+}
+
+/* ---------- input ---------- */
+document.addEventListener('click',e=>{
+  const card=e.target.closest('#hand .card');
+  if(card){
+    const id=+card.dataset.id;
+    if(S.players[0].finished) return;
+    sel.has(id)?sel.delete(id):sel.add(id); hintMsg='';
+    renderMe(); return;
+  }
+  const b=e.target.closest('[data-act]'); if(!b) return;
+  const act=b.dataset.act, me=S.players[0];
+  if(act==='play'){
+    if(S.phase!=='play'||S.turn!==0) return;
+    doPlay(0,me.hand.filter(c=>sel.has(c.id)));
+  }else if(act==='pass'||act==='draw'){
+    if(S.phase!=='play'||S.turn!==0) return;
+    doPass(0,act==='draw');
+  }else if(act==='hint'){
+    const m=chooseMove(0,true);
+    if(m){sel=new Set(m.cards.map(c=>c.id)); hintMsg='';}
+    else{sel.clear(); hintMsg='出せる札がありません。パスするか、1枚引いてパス';}
+    renderMe();
+  }else if(act==='give'){confirmExchange();}
+  else if(act==='rules'||act==='settings'){sheet=act; renderSheet();}
+  else if(act==='closeSheet'){sheet=null; renderSheet();}
+  else if(act==='closeResult'){S.resultSeen=true; renderSheet();}
+  else if(act==='result'){S.resultSeen=false; renderSheet();}
+  else if(act==='next'){S.resultSeen=false; startRound();}
+  else if(act==='applySettings'){
+    CFG={players:+$('#setPlayers').value,hand:+$('#setHand').value,jokers:+$('#setJokers').value,
+      seq:$('#setSeq').value==='1',recycle:$('#setRecycle').value==='1',speed:+$('#setSpeed').value,
+      seqCmp:$('#setSeqCmp').value,seqRev:$('#setSeqRev').value==='1',
+      lockColor:$('#setLockColor').value==='1',lockSuit:$('#setLockSuit').value==='1',lockNum:$('#setLockNum').value==='1'};
+    saveCfg(); sheet=null; newGame();
+  }
+});
+$('#overlay').addEventListener('click',e=>{if(e.target.id==='overlay'&&sheet){sheet=null; renderSheet();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&sheet){sheet=null; renderSheet();}});
+window.addEventListener('resize',()=>{if(S) layoutHand();});
+
+/* ---------- boot ---------- */
+window.claude?.hot?.snapshot(()=>({S,CFG}));
+function start(data){
+  if(data&&data.S&&data.S.players){
+    S=data.S; if(data.CFG) CFG={...DEFAULTS,...data.CFG};
+    S.cfg={...DEFAULTS,...S.cfg};
+    if(!S.lock) S.lock={color:null,suit:null,num:false};
+    schedule();
+  }
+  else newGame();
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
