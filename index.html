@@ -169,6 +169,13 @@ table.res tr.me td{color:var(--gold)}
 .form label{color:var(--muted)}
 .form select{font:inherit;background:var(--felt);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
 .note{color:var(--muted);font-size:13px}
+.step{font-size:12px;letter-spacing:.12em;color:var(--muted);margin:0 0 4px}
+.lead{font-size:15px;line-height:1.75;margin:0 0 6px}
+.lead b{color:var(--gold)}
+.diff li{margin-bottom:6px}
+.diff b{color:var(--paper)}
+.form h3{grid-column:1/-1;margin:10px 0 0;padding-top:10px;border-top:1px solid var(--line)}
+.form h3:first-child{margin-top:0;padding-top:0;border-top:0}
 
 @media (max-width:860px){
   #app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;height:auto;min-height:100%}
@@ -198,6 +205,7 @@ table.res tr.me td{color:var(--gold)}
   <header class="bar">
     <h1>山札大貧民<small>パスしたら一枚引ける</small></h1>
     <div class="round">第<b id="roundNo">1</b>局</div>
+    <button class="btn small" data-act="intro" type="button">はじめに</button>
     <button class="btn small" data-act="rules" type="button">ルール</button>
     <button class="btn small" data-act="settings" type="button">設定</button>
   </header>
@@ -242,9 +250,11 @@ const TAG={4:'返',5:'切',6:'飛',8:'逆'};
 const NAMES=['ミナト','サクラ','ケンジ','アオイ'];
 const $=s=>document.querySelector(s);
 
-const DEFAULTS={players:4,hand:8,jokers:0,seq:true,recycle:true,speed:800,seqCmp:'low',seqRev:true,lockColor:true,lockSuit:true,lockNum:true};
+const DEFAULTS={players:4,hand:8,jokers:2,seq:true,recycle:true,speed:800,seqCmp:'low',seqRev:true,lockColor:true,lockSuit:true,lockNum:true};
 let CFG=loadCfg();
-let S=null, sel=new Set(), timer=null, shownBanner=0, sheet=null, hintMsg='';
+let S=null, sel=new Set(), timer=null, shownBanner=0, sheet=null, hintMsg='', onboarding=false;
+function introSeen(){try{return localStorage.getItem('yamafuda-intro')==='1';}catch(e){return false;}}
+function markIntroSeen(){try{localStorage.setItem('yamafuda-intro','1');}catch(e){}}
 
 function loadCfg(){
   const d={...DEFAULTS};
@@ -667,7 +677,7 @@ function endRound(){
 }
 function schedule(){
   clearTimeout(timer); render();
-  if(S.phase!=='play'||S.players[S.turn].isHuman) return;
+  if(onboarding||S.phase!=='play'||S.players[S.turn].isHuman) return;
   const fast=S.players[0].finished;
   timer=setTimeout(cpuTurn,fast?Math.max(250,S.cfg.speed*0.45):S.cfg.speed);
 }
@@ -810,8 +820,31 @@ function renderSheet(){
   if(!kind){ov.hidden=true; return;}
   ov.hidden=false;
   if(kind==='rules') sh.innerHTML=rulesHTML();
-  else if(kind==='settings') sh.innerHTML=settingsHTML();
+  else if(kind==='intro') sh.innerHTML=introHTML();
+  else if(kind==='settings'||kind==='setup') sh.innerHTML=settingsHTML(kind==='setup');
   else sh.innerHTML=resultHTML();
+  sh.scrollTop=0;
+}
+function introHTML(){
+  return `${onboarding?'<p class="step">はじめに 1 / 2</p>':''}
+    <h2>山札大貧民へようこそ</h2>
+    <p>パスのときに山札から1枚引ける大貧民（大富豪）です。ブラウザだけで、CPUを相手に3〜5人で遊べます。</p>
+    <h3>いつもの大貧民との違い</h3>
+    <ul class="diff">
+      <li><b>全部は配らない。</b>手札は8枚ずつで、残りは山札として場に置きます。</li>
+      <li><b>パスのときに山札から1枚引ける。</b>引くかどうかは自由です。手札が弱くても引き直しで巻き返せるので、周回ごとに局面が変わります。</li>
+      <li><b>山札は尽きない。</b>山札がなくなったら、流れた札を切り直して補充します。</li>
+    </ul>
+    <h3>入っているローカルルール</h3>
+    <ul>
+      <li>7リバース・8切り・9スキップ・11バック（J）</li>
+      <li>革命と階段革命、ジョーカーとスペ3返し</li>
+      <li>色縛り・スート縛り・数字縛り（重なることもあります）</li>
+    </ul>
+    <p class="note">もとはUNOのカードで遊んでいたハウスルールを、トランプで再現したものです。細かいルールは、遊びながら右上の「ルール」でいつでも確認できます。</p>
+    <div class="row">${onboarding
+      ?'<button class="btn primary" data-act="introNext" type="button">次へ</button>'
+      :'<button class="btn primary" data-act="closeSheet" type="button">閉じる</button>'}</div>`;
 }
 function resultHTML(){
   const nextLow=S.players[S.prevOrder[S.n-1]].name;
@@ -862,12 +895,17 @@ function rulesHTML(){
     <div class="row"><button class="btn primary" data-act="closeSheet" type="button">閉じる</button></div>`;
 }
 function opt(v,cur,label){return `<option value="${v}" ${String(v)===String(cur)?'selected':''}>${label}</option>`;}
-function settingsHTML(){
-  return `<h2>設定</h2>
+function settingsHTML(setup){
+  return `${setup?'<p class="step">はじめに 2 / 2</p>':''}
+    <h2>${setup?'ルールを決める':'設定'}</h2>
+    ${setup?'<p class="lead">ジョーカーの枚数とローカルルールを、<b>いつも遊んでいるルールに合わせて</b>設定してください。迷ったらそのままで大丈夫です。あとから右上の「設定」でも変えられます。</p>':''}
     <div class="form">
+      <h3>基本</h3>
       <label for="setPlayers">人数</label><select id="setPlayers">${[3,4,5].map(v=>opt(v,CFG.players,`${v}人（CPU ${v-1}人）`)).join('')}</select>
       <label for="setHand">配る枚数</label><select id="setHand">${[5,6,7,8,9,10].map(v=>opt(v,CFG.hand,`${v}枚`)).join('')}</select>
       <label for="setJokers">ジョーカー</label><select id="setJokers">${[0,1,2].map(v=>opt(v,CFG.jokers,v?`${v}枚`:'なし')).join('')}</select>
+      <label for="setSpeed">CPUの速さ</label><select id="setSpeed">${opt(450,CFG.speed,'速い')}${opt(800,CFG.speed,'ふつう')}${opt(1300,CFG.speed,'ゆっくり')}</select>
+      <h3>ローカルルール</h3>
       <label for="setSeq">階段</label><select id="setSeq">${opt('1',CFG.seq?'1':'0','あり')}${opt('0',CFG.seq?'1':'0','なし')}</select>
       <label for="setSeqCmp">階段の比べ方</label><select id="setSeqCmp">${opt('low',CFG.seqCmp,'一番下の札で比べる（345→456可）')}${opt('strict',CFG.seqCmp,'全部上回る（345→678以上）')}</select>
       <label for="setSeqRev">階段革命</label><select id="setSeqRev">${opt('1',CFG.seqRev?'1':'0','あり（同スート5連番）')}${opt('0',CFG.seqRev?'1':'0','なし')}</select>
@@ -875,10 +913,12 @@ function settingsHTML(){
       <label for="setLockSuit">スート縛り</label><select id="setLockSuit">${opt('1',CFG.lockSuit?'1':'0','あり')}${opt('0',CFG.lockSuit?'1':'0','なし')}</select>
       <label for="setLockNum">数字縛り</label><select id="setLockNum">${opt('1',CFG.lockNum?'1':'0','あり')}${opt('0',CFG.lockNum?'1':'0','なし')}</select>
       <label for="setRecycle">山札切れ</label><select id="setRecycle">${opt('1',CFG.recycle?'1':'0','流れた札を切り直す')}${opt('0',CFG.recycle?'1':'0','それ以降は引けない')}</select>
-      <label for="setSpeed">CPUの速さ</label><select id="setSpeed">${opt(450,CFG.speed,'速い')}${opt(800,CFG.speed,'ふつう')}${opt(1300,CFG.speed,'ゆっくり')}</select>
     </div>
-    <p class="note">変更は新しいゲームから反映されます。累計点はリセットされます。</p>
-    <div class="row"><button class="btn" data-act="closeSheet" type="button">キャンセル</button><button class="btn primary" data-act="applySettings" type="button">この設定で新しく始める</button></div>`;
+    <p class="note">7リバース・8切り・9スキップ・11バックと、パスのときに山札から引けるルールは常にありです。</p>
+    ${setup
+      ?`<div class="row"><button class="btn" data-act="introBack" type="button">戻る</button><button class="btn primary" data-act="applySettings" type="button">この設定で始める</button></div>`
+      :`<p class="note">変更は新しいゲームから反映されます。累計点はリセットされます。</p>
+    <div class="row"><button class="btn" data-act="closeSheet" type="button">キャンセル</button><button class="btn primary" data-act="applySettings" type="button">この設定で新しく始める</button></div>`}`;
 }
 
 /* ---------- input ---------- */
@@ -904,7 +944,9 @@ document.addEventListener('click',e=>{
     else{sel.clear(); hintMsg='出せる札がありません。パスするか、1枚引いてパス';}
     renderMe();
   }else if(act==='give'){confirmExchange();}
-  else if(act==='rules'||act==='settings'){sheet=act; renderSheet();}
+  else if(act==='rules'||act==='settings'||act==='intro'){sheet=act; renderSheet();}
+  else if(act==='introNext'){sheet='setup'; renderSheet();}
+  else if(act==='introBack'){sheet='intro'; renderSheet();}
   else if(act==='closeSheet'){sheet=null; renderSheet();}
   else if(act==='closeResult'){S.resultSeen=true; renderSheet();}
   else if(act==='result'){S.resultSeen=false; renderSheet();}
@@ -914,11 +956,13 @@ document.addEventListener('click',e=>{
       seq:$('#setSeq').value==='1',recycle:$('#setRecycle').value==='1',speed:+$('#setSpeed').value,
       seqCmp:$('#setSeqCmp').value,seqRev:$('#setSeqRev').value==='1',
       lockColor:$('#setLockColor').value==='1',lockSuit:$('#setLockSuit').value==='1',lockNum:$('#setLockNum').value==='1'};
-    saveCfg(); sheet=null; newGame();
+    saveCfg(); sheet=null;
+    if(onboarding){onboarding=false; markIntroSeen();}
+    newGame();
   }
 });
-$('#overlay').addEventListener('click',e=>{if(e.target.id==='overlay'&&sheet){sheet=null; renderSheet();}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&sheet){sheet=null; renderSheet();}});
+$('#overlay').addEventListener('click',e=>{if(e.target.id==='overlay'&&sheet&&!onboarding){sheet=null; renderSheet();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&sheet&&!onboarding){sheet=null; renderSheet();}});
 window.addEventListener('resize',()=>{if(S) layoutHand();});
 
 /* ---------- boot ---------- */
@@ -930,7 +974,10 @@ function start(data){
     if(!S.lock) S.lock={color:null,suit:null,num:false};
     schedule();
   }
-  else newGame();
+  else{
+    if(!introSeen()){onboarding=true; sheet='intro';}
+    newGame();
+  }
 }
 window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
 })();
